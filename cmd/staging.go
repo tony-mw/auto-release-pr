@@ -32,9 +32,11 @@ import (
 const (
 	bbBaseUrl   = "bitbucket.dentsplysirona.com/rest/api/1.0"
 	repoBaseUrl = "bitbucket.dentsplysirona.com/scm"
+	username    = "USERNAME"
+	password    = "PASSWORD"
 )
 
-var bitBucketCredentialString string = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", os.Getenv("TEMPUSER"), os.Getenv("BBTOKEN"))))
+var bitBucketCredentialString string = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", os.Getenv(username), os.Getenv(password))))
 
 var debugOn utils.Logger = utils.Logger{Debug: false}
 var fatalError utils.Error = utils.Error{Fatal: true}
@@ -221,7 +223,7 @@ func (s StagingConfig) checkoutBranch(exists bool) {
 	r, err := git.Clone(memory.NewStorage(), fs, &git.CloneOptions{
 		//https://bitbucket.dentsplysirona.com/scm/atopoc/cirrus-poc-gitops.git
 		URL:  fmt.Sprintf("https://%s/scm/%s/%s.git", repoBaseUrl, s.BBProject, s.RepoSlug),
-		Auth: &http2.BasicAuth{Username: os.Getenv("TEMPUSER"), Password: os.Getenv("BBTOKEN")},
+		Auth: &http2.BasicAuth{Username: os.Getenv(username), Password: os.Getenv(password)},
 		Depth: 2,
 		//ReferenceName: plumbing.ReferenceName(s.SourceBranch),
 	})
@@ -233,7 +235,7 @@ func (s StagingConfig) checkoutBranch(exists bool) {
 	f := git.FetchOptions{
 		//RefSpecs: []config.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
 		RefSpecs: []config.RefSpec{"refs/*:refs/*",},
-		Auth:     &http2.BasicAuth{Username: os.Getenv("TEMPUSER"), Password: os.Getenv("BBTOKEN")},
+		Auth:     &http2.BasicAuth{Username: os.Getenv(username), Password: os.Getenv(password)},
 	}
 	err = r.Fetch(&f)
 	if err != nil {
@@ -422,7 +424,7 @@ func (s StagingConfig) commitAndPush(r *git.Repository, wt *git.Worktree) {
 	pushOptions := git.PushOptions{
 		RemoteName: "origin",
 		//RefSpecs: []config.RefSpec{config.RefSpec(fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", s.SourceBranch, s.SourceBranch))},
-		Auth: &http2.BasicAuth{Username: os.Getenv("TEMPUSER"), Password: os.Getenv("BBTOKEN")},
+		Auth: &http2.BasicAuth{Username: os.Getenv(username), Password: os.Getenv(password)},
 	}
 	err := r.Push(&pushOptions)
 	if err != nil {
