@@ -5,6 +5,7 @@ Copyright © 2022 Tony Prestifilippo
 package cmd
 
 import (
+	"bitbucket.dentsplysirona.com/atopoc/auto-release-pr/utils"
 	"bufio"
 	"bytes"
 	"encoding/base64"
@@ -34,6 +35,9 @@ const (
 )
 
 var bitBucketCredentialString string = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", os.Getenv("TEMPUSER"), os.Getenv("BBTOKEN"))))
+
+var debugOn utils.Logger = utils.Logger{Debug: false}
+var fatalError utils.Error = utils.Error{Fatal: true}
 
 type ReleaseConfig interface {
 }
@@ -225,14 +229,17 @@ func (s StagingConfig) checkoutBranch(exists bool) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println("Fetching...")
 	f := git.FetchOptions{
-		RefSpecs: []config.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
+		//RefSpecs: []config.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
+		RefSpecs: []config.RefSpec{"refs/*:refs/*",},
 		Auth:     &http2.BasicAuth{Username: os.Getenv("TEMPUSER"), Password: os.Getenv("BBTOKEN")},
 	}
 	err = r.Fetch(&f)
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println("Fetching done!")
 	//Check out the working tree
 	wt, err := r.Worktree()
 	if err != nil {
