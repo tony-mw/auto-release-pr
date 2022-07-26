@@ -298,10 +298,10 @@ func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, f
 		//Switch to main to get updated test semver.yaml
 		sbt := plumbing.ReferenceName("refs/heads/main")
 		s.switchBranch(r, wt, sbt)
-		testPath := fmt.Sprintf(".argocd/testing/%s/.semver.yaml", v)
+		authoritativePath := fmt.Sprintf("images/latest/%s/.semver.yaml", v)
 		stagingPath := fmt.Sprintf(".argocd/staging/%s/.semver.yaml", v)
 		//Give me billy file
-		tp, err := fs.Open(testPath)
+		tp, err := fs.Open(authoritativePath)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -343,6 +343,7 @@ func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, f
 		if err = w.Flush(); err != nil {
 			log.Fatal("Error flushing", err)
 		}
+
 		rf, err := fs.OpenFile(stagingPath,os.O_RDWR|os.O_CREATE, 0600)
 		if err != nil {
 			log.Fatal(err)
