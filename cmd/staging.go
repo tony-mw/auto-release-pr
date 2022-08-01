@@ -21,7 +21,6 @@ import (
 	"github.com/spf13/cobra"
 	http2 "gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 	"gopkg.in/yaml.v2"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -34,6 +33,8 @@ const (
 	repoBaseUrl = "bitbucket.dentsplysirona.com/scm"
 	username    = "USERNAME"
 	password    = "PASSWORD"
+	//username    = "TEMPUSER"
+	//password    = "BBTOKEN"
 )
 
 var bitBucketCredentialString string = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", os.Getenv(username), os.Getenv(password))))
@@ -41,7 +42,8 @@ var bitBucketCredentialString string = base64.StdEncoding.EncodeToString([]byte(
 var debugOn utils.Logger = utils.Logger{Debug: false}
 var fatalError utils.Error = utils.Error{Fatal: true}
 
-type ReleaseConfig interface {
+type File interface {
+	inMemoryRead(authoritativePath string, stagingPath string, fs billy.Filesystem) []byte
 }
 
 type StagingConfig struct {
@@ -77,6 +79,16 @@ type VersionFile struct {
 	CommitHash string `yaml:"commit-hash"`
 	Rc         int    `yaml:"rc"`
 	Release    string `yaml:"release"`
+}
+
+type AppConfig struct {
+	App struct {
+		Source    string `yaml:"source"`
+		Path      string `yaml:"path"`
+		Revision  string `yaml:"revision"`
+		ImageName string `yaml:"image_name"`
+		ImageTag  string `yaml:"image_tag"`
+	} `yaml:"app"`
 }
 
 func (s StagingConfig) PrepRelease() {
@@ -289,92 +301,101 @@ func (s StagingConfig) switchBranch(r *git.Repository, wt *git.Worktree, branchR
 	return
 }
 
+func(v VersionFile) inMemoryRead(authoritativePath string, stagingPath string, fs billy.Filesystem) []byte {
+	//Give Billy.file
+	fmt.Println("Reading auth path...")
+	tp, err := fs.Open(authoritativePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	//Create a new read buffer
+	rd := bufio.NewReader(tp)
+	dataYaml, err := ioutil.ReadAll(rd)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return dataYaml
+}
+
+func(a AppConfig) inMemoryRead(authoritativePath string, stagingPath string, fs billy.Filesystem) []byte {
+	fmt.Println("Reading staging path...")
+	tp, err := fs.Open(stagingPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	//Create a new read buffer
+	rd := bufio.NewReader(tp)
+	dataYaml, err := ioutil.ReadAll(rd)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Read complete")
+	return dataYaml
+}
+
+func readFile(f File, authoritativePath string, stagingPath string, fs billy.Filesystem) []byte {
+	return f.inMemoryRead(authoritativePath , stagingPath, fs)
+}
 func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, fs billy.Filesystem) {
 	for _, v := range s.Services {
-		yamlData := VersionFile{}
+
+		versionFile := VersionFile{}
+		appConfig := AppConfig{}
 
 		//TODO: Need to figure out how to open the test semver.yaml from the main branch instead of current branch
 		//Set up my branch options so I can create or checkout the branch
 		//Switch to main to get updated test semver.yaml
 		sbt := plumbing.ReferenceName("refs/heads/main")
 		s.switchBranch(r, wt, sbt)
-		authoritativePath := fmt.Sprintf("images/latest/%s/.semver.yaml", v)
-		stagingPath := fmt.Sprintf(".argocd/staging/%s/.semver.yaml", v)
-		//Give me billy file
-		tp, err := fs.Open(authoritativePath)
-		if err != nil {
-			log.Fatal(err)
-		}
-		//Create a new read buffer
-		rd := bufio.NewReader(tp)
+		authoritativePath := fmt.Sprintf("%s/images/latest/%s/.semver.yaml", v, v)
+		stagingPath := fmt.Sprintf("%s/.argocd/staging/%s/config.yaml", v, v)
+		////Give me billy file
+		//tp, err := fs.Open(authoritativePath)
+		//if err != nil {
+		//	log.Fatal(err)
+		//}
+		////Create a new read buffer
+		//rd := bufio.NewReader(tp)
+
+		myVersionData := readFile(versionFile, authoritativePath, stagingPath, fs)
+
 		//Switch back to staging to update file
 		sbs := plumbing.ReferenceName(fmt.Sprintf("refs/heads/%s", s.SourceBranch))
 		s.switchBranch(r, wt, sbs)
-		fo, err := fs.OpenFile(stagingPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+
+		myAppConfigData := readFile(appConfig, authoritativePath, stagingPath, fs)
+
+		err := yaml.Unmarshal(myVersionData, &versionFile)
 		if err != nil {
 			log.Fatal(err)
 		}
-		//Defer close
-		defer func() {
-			if err := fo.Close(); err != nil {
-				log.Fatal(err)
-			}
-		}()
+		fmt.Println("The version data dog: ", versionFile)
 
-		// make a write buffer
-		w := bufio.NewWriter(fo)
-		buf := make([]byte, 1024)
-		for {
-			// read a chunk
-			n, err := rd.Read(buf)
-			if err != nil && err != io.EOF {
-				log.Fatal("Error reading", err)
-			}
-			if n == 0 {
-				break
-			}
-
-			// write a chunk
-			if _, err := w.Write(buf[:n]); err != nil {
-				log.Fatal("Error writing", err)
-			}
-		}
-
-		if err = w.Flush(); err != nil {
-			log.Fatal("Error flushing", err)
-		}
-
-		rf, err := fs.OpenFile(stagingPath,os.O_RDWR|os.O_CREATE, 0600)
+		err = yaml.Unmarshal(myAppConfigData, &appConfig)
 		if err != nil {
 			log.Fatal(err)
 		}
-		content, err := ioutil.ReadAll(rf)
-		if err != nil {
-			log.Fatal(err)
-		}
-		err = yaml.Unmarshal(content, &yamlData)
-		if err != nil {
-			log.Fatal(err)
-		}
-		//Update RC Value for Staging
-		yamlData.Rc = 0
+		fmt.Println("The app Config data dog: ", appConfig)
+
+		//Update Version Value for Staging!!!!
+		appConfig.App.ImageTag = versionFile.Release
 
 		//Rewrite Yaml
-		rf2, err := fs.OpenFile(stagingPath,os.O_RDWR|os.O_CREATE|os.O_TRUNC,0600)
+		cfg, err := fs.OpenFile(stagingPath,os.O_RDWR|os.O_CREATE|os.O_TRUNC,0600)
 		if err != nil {
 			log.Fatal(err)
 		}
-		rewriteYaml, err := yaml.Marshal(&yamlData)
+		appConfigNewYaml, err := yaml.Marshal(appConfig)
 		if err != nil {
 			log.Fatal(err)
 		}
-		err = util.WriteFile(fs, rf2.Name(), rewriteYaml,0644)
+		err = util.WriteFile(fs, cfg.Name(), appConfigNewYaml,0644)
 
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		content, err = ioutil.ReadAll(rf2)
+		content, err := ioutil.ReadAll(cfg)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -388,7 +409,7 @@ func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, f
 		for k, v := range s {
 			fmt.Println("Worktree status for: ", k, v.Extra, v.Worktree)
 		}
-		myAdd, err := wt.Add(fmt.Sprintf(".argocd/staging/%s/.semver.yaml", v))
+		myAdd, err := wt.Add(fmt.Sprintf("%s/.argocd/staging/%s/config.yaml", v, v))
 		if err != nil {
 			log.Fatal(err)
 		}
