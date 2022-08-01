@@ -32,8 +32,8 @@ import (
 const (
 	bbBaseUrl   = "bitbucket.dentsplysirona.com/rest/api/1.0"
 	repoBaseUrl = "bitbucket.dentsplysirona.com/scm"
-	username    = "USERNAME"
-	password    = "PASSWORD"
+	username    = "TEMPUSER"
+	password    = "BBTOKEN"
 )
 
 var bitBucketCredentialString string = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", os.Getenv(username), os.Getenv(password))))
@@ -234,11 +234,13 @@ func (s StagingConfig) checkoutBranch(exists bool) {
 	fmt.Println("Fetching...")
 	f := git.FetchOptions{
 		//RefSpecs: []config.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
+		//RefSpecs: []config.RefSpec{"refs/*:refs/*",},
 		RefSpecs: []config.RefSpec{"refs/*:refs/*",},
 		Auth:     &http2.BasicAuth{Username: os.Getenv(username), Password: os.Getenv(password)},
 	}
 	err = r.Fetch(&f)
 	if err != nil {
+		fmt.Println("Error fetching...")
 		log.Fatal(err)
 	}
 	fmt.Println("Fetching done!")
@@ -298,8 +300,8 @@ func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, f
 		//Switch to main to get updated test semver.yaml
 		sbt := plumbing.ReferenceName("refs/heads/main")
 		s.switchBranch(r, wt, sbt)
-		authoritativePath := fmt.Sprintf("images/latest/%s/.semver.yaml", v)
-		stagingPath := fmt.Sprintf(".argocd/staging/%s/.semver.yaml", v)
+		authoritativePath := fmt.Sprintf("%s/images/latest/%s/.semver.yaml", v, v)
+		stagingPath := fmt.Sprintf("%s/.argocd/staging/%s/.semver.yaml", v, v)
 		//Give me billy file
 		tp, err := fs.Open(authoritativePath)
 		if err != nil {
