@@ -25,16 +25,17 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 )
 
 //https://bitbucket.dentsplysirona.com/scm/atopoc/cirrus-poc-gitops.git
 const (
 	bbBaseUrl   = "bitbucket.dentsplysirona.com/rest/api/1.0"
 	repoBaseUrl = "bitbucket.dentsplysirona.com/scm"
-	username    = "USERNAME"
-	password    = "PASSWORD"
-	//username = "TEMPUSER"
-	//password = "BBTOKEN"
+	//username    = "USERNAME"
+	//password    = "PASSWORD"
+	username = "TEMPUSER"
+	password = "BBTOKEN"
 )
 
 var bitBucketCredentialString string = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", os.Getenv(username), os.Getenv(password))))
@@ -233,10 +234,10 @@ func (s StagingConfig) checkoutBranch(exists bool) {
 	fs := memfs.New()
 	//Clone the repo into memory
 	r, err := git.Clone(memory.NewStorage(), fs, &git.CloneOptions{
-		//https://bitbucket.dentsplysirona.com/scm/atopoc/cirrus-poc-gitops.git
+		//https://bitbucket.dentsplysirona.com/scm/atopoc/dpns-gitops-prod.git
 		URL:   fmt.Sprintf("https://%s/scm/%s/%s.git", repoBaseUrl, s.BBProject, s.RepoSlug),
 		Auth:  &http2.BasicAuth{Username: os.Getenv(username), Password: os.Getenv(password)},
-		Depth: 2,
+		Depth: 25,
 		//ReferenceName: plumbing.ReferenceName(s.SourceBranch),
 	})
 
@@ -247,7 +248,8 @@ func (s StagingConfig) checkoutBranch(exists bool) {
 	f := git.FetchOptions{
 		//RefSpecs: []config.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
 		//RefSpecs: []config.RefSpec{"refs/*:refs/*",},
-		RefSpecs: []config.RefSpec{"refs/*:refs/*"},
+		//RefSpecs: []config.RefSpec{"refs/*:refs/*"},
+		RefSpecs: []config.RefSpec{"refs/*:refs/*",},
 		Auth:     &http2.BasicAuth{Username: os.Getenv(username), Password: os.Getenv(password)},
 	}
 	err = r.Fetch(&f)
@@ -341,6 +343,8 @@ func readFile(f File, authoritativePath string, stagingPath string, fs billy.Fil
 func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, fs billy.Filesystem) {
 	for _, v := range s.Services {
 
+		fmt.Println("\n", strings.TrimSpace(v))
+
 		versionFile := VersionFile{}
 		appConfig := AppConfig{}
 
@@ -349,8 +353,9 @@ func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, f
 		//Switch to main to get updated test semver.yaml
 		sbt := plumbing.ReferenceName("refs/heads/main")
 		s.switchBranch(r, wt, sbt)
-		authoritativePath := fmt.Sprintf("%s/images/latest/%s/.semver.yaml", v, v)
-		stagingPath := fmt.Sprintf("%s/.argocd/staging/%s/config.yaml", v, v)
+		authoritativePath := fmt.Sprintf("%s/images/latest/%s/.semver.yaml", s.Product, v)
+		fmt.Println("\n", authoritativePath)
+		stagingPath := fmt.Sprintf("%s/.argocd/staging/%s/config.yaml", s.Product, v)
 		////Give me billy file
 		//tp, err := fs.Open(authoritativePath)
 		//if err != nil {
@@ -404,20 +409,20 @@ func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, f
 		fmt.Println("New content is: ", string(content))
 
 		fmt.Println("Getting worktree status for service: ", v)
-		s, err := wt.Status()
+		ss, err := wt.Status()
 		if err != nil {
 			log.Fatal(err)
 		}
-		for k, v := range s {
+		for k, v := range ss {
 			fmt.Println("Worktree status for: ", k, v.Extra, v.Worktree)
 		}
-		myAdd, err := wt.Add(fmt.Sprintf("%s/.argocd/staging/%s/config.yaml", v, v))
+		myAdd, err := wt.Add(fmt.Sprintf("%s/.argocd/staging/%s/config.yaml", s.Product, v))
 		if err != nil {
 			log.Fatal(err)
 		}
 		fmt.Println(myAdd.String())
 
-		for k, v := range s {
+		for k, v := range ss {
 			fmt.Println("Worktree status for: ", k, v.Extra, v.Worktree)
 		}
 
@@ -474,7 +479,7 @@ to quickly create a Cobra application.`,
 		bbProject, _ := cmd.Flags().GetString("bitbucket-project")
 		sourceBranch, _ := cmd.Flags().GetString("source-branch")
 		product, _ := cmd.Flags().GetString("product")
-		services, _ := cmd.Flags().GetStringSlice("Services")
+		services, _ := cmd.Flags().GetStringSlice("services")
 
 		myStagingConfig := StagingConfig{
 			RepoSlug:     repoSlug,
@@ -495,7 +500,7 @@ func init() {
 	stagingCmd.PersistentFlags().String("bitbucket-project", "", "The repository bitbucket project")
 	stagingCmd.PersistentFlags().String("source-branch", "", "The branch to create")
 	stagingCmd.PersistentFlags().String("product", "", "The product which will also be the top level directory of the repo")
-	stagingCmd.PersistentFlags().StringSlice("Services", []string{""}, "A list of the services that will be deployed to staging")
+	stagingCmd.PersistentFlags().StringSlice("services", []string{""}, "A list of the services that will be deployed to staging")
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
 	// stagingCmd.PersistentFlags().String("foo", "", "A help for foo")
