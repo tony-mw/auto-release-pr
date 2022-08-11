@@ -35,10 +35,10 @@ import (
 const (
 	bbBaseUrl   = "bitbucket.dentsplysirona.com/rest/api/1.0"
 	repoBaseUrl = "bitbucket.dentsplysirona.com/scm"
-	//username    = "USERNAME"
-	//password    = "PASSWORD"
-	username = "TEMPUSER"
-	password = "BBTOKEN"
+	username    = "USERNAME"
+	password    = "PASSWORD"
+	//username = "TEMPUSER"
+	//password = "BBTOKEN"
 )
 
 var bitBucketCredentialString string = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", os.Getenv(username), os.Getenv(password))))
@@ -501,17 +501,6 @@ func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, f
 }
 
 func (s StagingConfig) commitAndPush(r *git.Repository, wt *git.Worktree) {
-	//for _, v := range s.Services {
-	//	_, err := wt.Add(fmt.Sprintf(".argocd/staging/%s/.semver.yaml", v))
-	//	if err != nil {
-	//		log.Fatal(err)
-	//	}
-	//}
-
-	//_, err := wt.Commit("Auto commit version update for release", &git.CommitOptions{})
-	//if err != nil {
-	//	log.Fatal("An error occurred committing", err)
-	//}
 
 	pushOptions := git.PushOptions{
 		RemoteName: "origin",
