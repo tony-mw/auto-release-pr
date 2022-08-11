@@ -21,11 +21,14 @@ import (
 	"github.com/spf13/cobra"
 	http2 "gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 	"gopkg.in/yaml.v2"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 )
 
 //https://bitbucket.dentsplysirona.com/scm/atopoc/cirrus-poc-gitops.git
@@ -196,6 +199,19 @@ func (s StagingConfig) CheckPullRequestExists() (bool, error) {
 	}
 }
 
+func increaseFetchDepth(r *git.Repository, f git.FetchOptions, depth int) error {
+	depth += 10
+	f.Depth = depth
+	err := r.Fetch(&f)
+	if err != nil {
+		if depth == 200 {
+			return fmt.Errorf("Depth is at 200 - this is the limit: %s", err)
+		}
+		_ = increaseFetchDepth(r, f, depth)
+	}
+	return nil
+}
+
 func (s StagingConfig) checkoutBranch(exists bool) {
 	//Create branch if it doesn't already exist
 	if !exists {
@@ -237,7 +253,7 @@ func (s StagingConfig) checkoutBranch(exists bool) {
 		//https://bitbucket.dentsplysirona.com/scm/atopoc/dpns-gitops-prod.git
 		URL:   fmt.Sprintf("https://%s/scm/%s/%s.git", repoBaseUrl, s.BBProject, s.RepoSlug),
 		Auth:  &http2.BasicAuth{Username: os.Getenv(username), Password: os.Getenv(password)},
-		Depth: 25,
+		Depth: 10,
 		//ReferenceName: plumbing.ReferenceName(s.SourceBranch),
 	})
 
@@ -249,13 +265,14 @@ func (s StagingConfig) checkoutBranch(exists bool) {
 		//RefSpecs: []config.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
 		//RefSpecs: []config.RefSpec{"refs/*:refs/*",},
 		//RefSpecs: []config.RefSpec{"refs/*:refs/*"},
-		RefSpecs: []config.RefSpec{"refs/*:refs/*",},
+		RefSpecs: []config.RefSpec{"refs/*:refs/*"},
 		Auth:     &http2.BasicAuth{Username: os.Getenv(username), Password: os.Getenv(password)},
+		Depth:    10,
 	}
 	err = r.Fetch(&f)
 	if err != nil {
-		fmt.Println("Error fetching...")
-		log.Fatal(err)
+		fmt.Println("Error fetching... Starting recursive function with increasing fetch depth...")
+		err = increaseFetchDepth(r, f, f.Depth)
 	}
 	fmt.Println("Fetching done!")
 	//Check out the working tree
@@ -340,19 +357,60 @@ func (a AppConfig) inMemoryRead(authoritativePath string, stagingPath string, fs
 func readFile(f File, authoritativePath string, stagingPath string, fs billy.Filesystem) []byte {
 	return f.inMemoryRead(authoritativePath, stagingPath, fs)
 }
+
+func (s StagingConfig) UpdateManifests(r *git.Repository, wt *git.Worktree, fs billy.Filesystem, wg *sync.WaitGroup, service string) {
+	defer wg.Done()
+	authoritativeManifestPath := fmt.Sprintf("%s/kustomize/%s/base/main", s.Product, service)
+	stagingManifestPath := fmt.Sprintf("%s/kustomize/%s/base/staging", s.Product, service)
+	manifestFileInfo, err := fs.ReadDir(authoritativeManifestPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, manifestFile := range manifestFileInfo {
+		sourcePath := filepath.Join(authoritativeManifestPath, manifestFile.Name())
+		destPath := filepath.Join(stagingManifestPath, manifestFile.Name())
+
+		outFile, err := fs.OpenFile(destPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer outFile.Close()
+		inFile, err := fs.Open(sourcePath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer inFile.Close()
+
+		_, err = io.Copy(outFile, inFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		myAdd, err := wt.Add(destPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf(myAdd.String())
+	}
+}
+
 func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, fs billy.Filesystem) {
+
+	var wg sync.WaitGroup
+
 	for _, v := range s.Services {
+		wg.Add(1)
 
 		fmt.Println("\n", strings.TrimSpace(v))
 
 		versionFile := VersionFile{}
 		appConfig := AppConfig{}
 
-		//TODO: Need to figure out how to open the test semver.yaml from the main branch instead of current branch
 		//Set up my branch options so I can create or checkout the branch
 		//Switch to main to get updated test semver.yaml
 		sbt := plumbing.ReferenceName("refs/heads/main")
 		s.switchBranch(r, wt, sbt)
+
+
 		authoritativePath := fmt.Sprintf("%s/images/latest/%s/.semver.yaml", s.Product, v)
 		fmt.Println("\n", authoritativePath)
 		stagingPath := fmt.Sprintf("%s/.argocd/staging/%s/config.yaml", s.Product, v)
@@ -370,6 +428,9 @@ func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, f
 		sbs := plumbing.ReferenceName(fmt.Sprintf("refs/heads/%s", s.SourceBranch))
 		s.switchBranch(r, wt, sbs)
 
+		//Spin off into another goRoutine here to update Manifest files
+		go s.UpdateManifests(r, wt, fs, &wg, v)
+
 		myAppConfigData := readFile(appConfig, authoritativePath, stagingPath, fs)
 
 		err := yaml.Unmarshal(myVersionData, &versionFile)
@@ -385,7 +446,7 @@ func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, f
 		fmt.Println("The app Config data dog: ", appConfig)
 
 		//Update Version Value for Staging!!!!
-		appConfig.App.ImageTag = versionFile.Release
+		appConfig.App.ImageTag = fmt.Sprintf("%s-%s", versionFile.Release, versionFile.CommitHash)
 
 		//Rewrite Yaml
 		cfg, err := fs.OpenFile(stagingPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
@@ -407,6 +468,8 @@ func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, f
 			log.Fatal(err)
 		}
 		fmt.Println("New content is: ", string(content))
+
+		wg.Wait()
 
 		fmt.Println("Getting worktree status for service: ", v)
 		ss, err := wt.Status()
