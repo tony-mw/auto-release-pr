@@ -35,10 +35,10 @@ import (
 const (
 	bbBaseUrl   = "bitbucket.dentsplysirona.com/rest/api/1.0"
 	repoBaseUrl = "bitbucket.dentsplysirona.com/scm"
-	username    = "USERNAME"
-	password    = "PASSWORD"
-	//username = "TEMPUSER"
-	//password = "BBTOKEN"
+	//username    = "USERNAME"
+	//password    = "PASSWORD"
+	username = "TEMPUSER"
+	password = "BBTOKEN"
 )
 
 var bitBucketCredentialString string = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", os.Getenv(username), os.Getenv(password))))
@@ -366,10 +366,19 @@ func (s StagingConfig) UpdateManifests(r *git.Repository, wt *git.Worktree, fs b
 	if err != nil {
 		log.Fatal(err)
 	}
+	destinationManifestFileInfo, err := fs.ReadDir(stagingManifestPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	//Delete dest files first
+	for _, manifestFile := range destinationManifestFileInfo {
+		fs.Remove(manifestFile.Name())
+	}
+
 	for _, manifestFile := range manifestFileInfo {
+		//TODO: Need to check if a file was deleted in source and then delete it in destination
 		sourcePath := filepath.Join(authoritativeManifestPath, manifestFile.Name())
 		destPath := filepath.Join(stagingManifestPath, manifestFile.Name())
-
 		outFile, err := fs.OpenFile(destPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 		if err != nil {
 			log.Fatal(err)
