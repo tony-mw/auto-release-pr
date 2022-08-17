@@ -35,10 +35,10 @@ import (
 const (
 	bbBaseUrl   = "bitbucket.dentsplysirona.com/rest/api/1.0"
 	repoBaseUrl = "bitbucket.dentsplysirona.com/scm"
-	//username    = "USERNAME"
-	//password    = "PASSWORD"
-	username = "TEMPUSER"
-	password = "BBTOKEN"
+	username    = "USERNAME"
+	password    = "PASSWORD"
+	//username = "TEMPUSER"
+	//password = "BBTOKEN"
 )
 
 var bitBucketCredentialString string = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", os.Getenv(username), os.Getenv(password))))
@@ -360,8 +360,8 @@ func readFile(f File, authoritativePath string, stagingPath string, fs billy.Fil
 
 func (s StagingConfig) UpdateManifests(r *git.Repository, wt *git.Worktree, fs billy.Filesystem, wg *sync.WaitGroup, service string) {
 	defer wg.Done()
-	authoritativeManifestPath := fmt.Sprintf("%s/kustomize/%s/base/main", s.Product, service)
-	stagingManifestPath := fmt.Sprintf("%s/kustomize/%s/base/staging", s.Product, service)
+	authoritativeManifestPath := fmt.Sprintf("%s/services/%s/manifests/base/main", s.Product, service)
+	stagingManifestPath := fmt.Sprintf("%s/services/%s/manifests/base/staging", s.Product, service)
 	manifestFileInfo, err := fs.ReadDir(authoritativeManifestPath)
 	if err != nil {
 		log.Fatal(err)
@@ -420,7 +420,7 @@ func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, f
 		s.switchBranch(r, wt, sbt)
 
 
-		authoritativePath := fmt.Sprintf("%s/images/latest/%s/.semver.yaml", s.Product, v)
+		authoritativePath := fmt.Sprintf("%s/services/%s/images/latest/.semver.yaml", s.Product, v)
 		fmt.Println("\n", authoritativePath)
 		stagingPath := fmt.Sprintf("%s/.argocd/staging/%s/config.yaml", s.Product, v)
 		////Give me billy file
