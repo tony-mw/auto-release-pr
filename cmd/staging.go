@@ -402,6 +402,22 @@ func (s StagingConfig) UpdateManifests(r *git.Repository, wt *git.Worktree, fs b
 	}
 }
 
+func CleanWorkTree(wt *git.Worktree, fileStrings []string) error {
+	ss1, err := wt.Status()
+	if err != nil {
+		return err
+	}
+	for k, v := range ss1 {
+		fmt.Println("Worktree status for: ", k, v.Extra, v.Worktree)
+		for _, vv := range fileStrings {
+			if strings.Contains(k, vv) {
+				wt.Remove(k)
+			}
+		}
+	}
+	return nil
+}
+
 func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, fs billy.Filesystem) {
 
 	var wg sync.WaitGroup
@@ -433,16 +449,21 @@ func (s StagingConfig) updateVersionFiles(r *git.Repository, wt *git.Worktree, f
 
 		myVersionData := readFile(versionFile, authoritativePath, stagingPath, fs)
 
+		//Clean Up Worktree
+		err := CleanWorkTree(wt, []string{".vscode", ".idea"})
+		if err != nil {
+			log.Fatal(err)
+		}
 		//Switch back to staging to update file
+		fmt.Println("Switching back to staging")
 		sbs := plumbing.ReferenceName(fmt.Sprintf("refs/heads/%s", s.SourceBranch))
 		s.switchBranch(r, wt, sbs)
 
 		//Spin off into another goRoutine here to update Manifest files
 		go s.UpdateManifests(r, wt, fs, &wg, v)
-
 		myAppConfigData := readFile(appConfig, authoritativePath, stagingPath, fs)
 
-		err := yaml.Unmarshal(myVersionData, &versionFile)
+		err = yaml.Unmarshal(myVersionData, &versionFile)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -527,13 +548,8 @@ func (s StagingConfig) commitAndPush(r *git.Repository, wt *git.Worktree) {
 // stagingCmd represents the staging command
 var stagingCmd = &cobra.Command{
 	Use:   "staging",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Trigger an automatic PR to the staging environment",
+	Long: "Trigger an automatic PR to the staging environment",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("staging called")
 		repoSlug, _ := cmd.Flags().GetString("repo-slug")
@@ -556,17 +572,10 @@ to quickly create a Cobra application.`,
 
 func init() {
 	rootCmd.AddCommand(stagingCmd)
-	// Here you will define your flags and configuration settings.
+
 	stagingCmd.PersistentFlags().String("repo-slug", "", "The repository slug")
 	stagingCmd.PersistentFlags().String("bitbucket-project", "", "The repository bitbucket project")
 	stagingCmd.PersistentFlags().String("source-branch", "", "The branch to create")
 	stagingCmd.PersistentFlags().String("product", "", "The product which will also be the top level directory of the repo")
 	stagingCmd.PersistentFlags().StringSlice("services", []string{""}, "A list of the services that will be deployed to staging")
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// stagingCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// stagingCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
