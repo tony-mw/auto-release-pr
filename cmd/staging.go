@@ -35,10 +35,10 @@ import (
 const (
 	bbBaseUrl   = "bitbucket.dentsplysirona.com/rest/api/1.0"
 	repoBaseUrl = "bitbucket.dentsplysirona.com/scm"
-	username    = "USERNAME"
-	password    = "PASSWORD"
-	//username = "TEMPUSER"
-	//password = "BBTOKEN"
+	//username    = "USERNAME"
+	//password    = "PASSWORD"
+	username = "TEMPUSER"
+	password = "BBTOKEN"
 )
 
 var bitBucketCredentialString string = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", os.Getenv(username), os.Getenv(password))))
@@ -372,7 +372,16 @@ func (s StagingConfig) UpdateManifests(r *git.Repository, wt *git.Worktree, fs b
 	}
 	//Delete dest files first
 	for _, manifestFile := range destinationManifestFileInfo {
-		fs.Remove(manifestFile.Name())
+		destPath := filepath.Join(stagingManifestPath, manifestFile.Name())
+		err := fs.Remove(destPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		myAdd, err := wt.Add(destPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf(myAdd.String())
 	}
 
 	for _, manifestFile := range manifestFileInfo {
