@@ -35,10 +35,10 @@ import (
 const (
 	bbBaseUrl   = "bitbucket.dentsplysirona.com/rest/api/1.0"
 	repoBaseUrl = "bitbucket.dentsplysirona.com/scm"
-	//username    = "USERNAME"
-	//password    = "PASSWORD"
-	username = "TEMPUSER"
-	password = "BBTOKEN"
+	username    = "USERNAME"
+	password    = "PASSWORD"
+	//username = "TEMPUSER"
+	//password = "BBTOKEN"
 )
 
 var bitBucketCredentialString string = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", os.Getenv(username), os.Getenv(password))))
